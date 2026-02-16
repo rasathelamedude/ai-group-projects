@@ -169,11 +169,11 @@ These are the specific behaviors the agent **MUST** perform:
 
 | Member       | Subsystem             | Sensor Used                        | Actuator (Action)                   |
 | ------------ | --------------------- | ---------------------------------- | ----------------------------------- |
-| **Member 1** | Ergonomics Monitor    | Webcam — face distance             | System notification popup           |
-| **Member 2** | Privacy Shield        | Webcam — background face detection | Window minimizer / screen blur      |
-| **Member 3** | Atmosphere Controller | Microphone — ambient dB level      | OS audio player                     |
-| **Member 4** | Power Optimizer       | Battery / charger status           | Display settings + Dark Mode toggle |
-| **Member 5** | Distraction Blocker   | Active window title                | Process / app manager               |
+| **Muhammad** | Ergonomics Monitor    | Webcam — face distance             | System notification popup           |
+| **Abdulla**  | Privacy Shield        | Webcam — background face detection | Window minimizer / screen blur      |
+| **Shabaz**   | Atmosphere Controller | Microphone — ambient dB level      | OS audio player                     |
+| **Peshawa**  | Power Optimizer       | Battery / charger status           | Display settings + Dark Mode toggle |
+| **Rasyar**   | Distraction Blocker   | Active window title                | Process / app manager               |
 
 ---
 
