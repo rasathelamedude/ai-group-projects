@@ -41,7 +41,7 @@ Students during long study sessions face **5 recurring problems** that negativel
 | 4   | Laptop unplugged, battery draining fast                 | Disturbs Focus        |
 | 5   | Accidentally spending too long on social media or games | Wasted study time     |
 
-No single existing tool addresses all five of these problems together in one unified agent.
+> **The Deep Work Guardian** is a solution to these recurring problems.
 
 ---
 
