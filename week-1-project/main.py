@@ -2,13 +2,14 @@ from agents import distraction_blocker
 from agents import power_optimizer
 from agents import atmosphere_controller
 from agents import privacy_shield
+from agents import posture_guardian
 import shared_state
 import threading
 import time
 
 
 def main():
-    print("🚀 Starting Deep Work Guardian...\n")
+    print("Starting Deep Work Guardian...\n")
 
     shared = shared_state.SharedState()
 
@@ -24,7 +25,6 @@ def main():
         threading.Thread(target=atmosphere.run, daemon=True),
         threading.Thread(target=privacy.run, daemon=True),
         threading.Thread(target=posture.run, daemon=True),
-        
     ]
 
     for thread in threads:
@@ -39,10 +39,12 @@ def main():
             print(
                 f"Battery: {status['battery_percent']}% | "
                 f"Active: {status['active_window'][:30]}"
+                f" | Distraction: {status['distraction_timer']}s"
+                f" | Noise: {status['noise_level_db']}dB"
             )
             time.sleep(5)
     except KeyboardInterrupt:
-        print("\n👋 Goodbye!")
+        print("\nGoodbye!")
 
 
 if __name__ == "__main__":
