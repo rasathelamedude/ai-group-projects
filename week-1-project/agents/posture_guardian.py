@@ -1,75 +1,123 @@
+"""
+Posture Guardian
+Detects:
+1) If user is too close to screen
+2) If user is leaning left or right
+"""
+
 import cv2
 import mediapipe as mp
 import time
-import threading  
-from win10toast import ToastNotifier
+import threading
 import pygame
 
-pygame.mixer.init()
-alert_sound = pygame.mixer.Sound("reminder.mp3") 
 
-toaster = ToastNotifier()
+class PostureGuardian:
 
-mp_pose = mp.solutions.pose
-mp_drawing = mp.solutions.drawing_utils
-pose = mp_pose.Pose()
+    CHECK_INTERVAL = 10
+    VISIBILITY_THRESHOLD = 0.7
+    LEAN_THRESHOLD = 0.05        # Lean sensitivity
+    CLOSE_THRESHOLD = 350        # Distance sensitivity (pixels)
 
-CHECK_INTERVAL = 10
-SHOULDER_TILT_THRESHOLD = 0.04
-VISIBILITY_THRESHOLD = 0.7 
+    def __init__(self):
+        self.last_alert_time = time.time() + 10
 
-last_alert_time = time.time() + 10
-def send_alert(message):
-    threading.Thread(
-        target=alert_sound.play,  
-        daemon=True
-    ).start()
+        # Sound
+        pygame.mixer.init()
+        self.alert_sound = pygame.mixer.Sound("remainderr.wav")
 
-def is_posture_bad(landmarks):
-    left_shoulder = landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER]
-    right_shoulder = landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER]
+        # Mediapipe
+        self.mp_pose = mp.solutions.pose
+        self.mp_drawing = mp.solutions.drawing_utils
+        self.pose = self.mp_pose.Pose()
 
-  
-    if left_shoulder.visibility < VISIBILITY_THRESHOLD or right_shoulder.visibility < VISIBILITY_THRESHOLD:
+        # Camera
+        self.cap = cv2.VideoCapture(0)
+
+ 
+    def run(self):
+        print("[PostureGuardian] Started — monitoring posture...")
+
+        while self.cap.isOpened():
+
+            ret, frame = self.cap.read()
+            if not ret:
+                break
+
+            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            results = self.pose.process(rgb_frame)
+            current_time = time.time()
+
+            if results.pose_landmarks:
+                self.mp_drawing.draw_landmarks(
+                    frame,
+                    results.pose_landmarks,
+                    self.mp_pose.POSE_CONNECTIONS
+                )
+
+                landmarks = results.pose_landmarks.landmark
+                frame_width = frame.shape[1]
+
+                bad, message = self.check_posture(landmarks, frame_width)
+
+                if bad and (current_time - self.last_alert_time > self.CHECK_INTERVAL):
+                    print(f"[PostureGuardian] ⚠ {message}")
+                    self.send_alert()
+                    self.last_alert_time = current_time
+
+                if bad:
+                    cv2.putText(frame,
+                                message,
+                                (30, 50),
+                                cv2.FONT_HERSHEY_SIMPLEX,
+                                1,
+                                (0, 0, 255),
+                                2)
+
+            cv2.imshow("Posture Guardian", frame)
+
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+
+        self.cleanup()
+
+ 
+    def check_posture(self, landmarks, frame_width):
+
+        left = landmarks[self.mp_pose.PoseLandmark.LEFT_SHOULDER]
+        right = landmarks[self.mp_pose.PoseLandmark.RIGHT_SHOULDER]
+
+        if (left.visibility < self.VISIBILITY_THRESHOLD or
+                right.visibility < self.VISIBILITY_THRESHOLD):
+            return False, ""
+
+         
+        vertical_diff = abs(left.y - right.y)
+
+        if vertical_diff > self.LEAN_THRESHOLD:
+            return True, "Sit straight! Don't lean."
+
+        
+        left_x = int(left.x * frame_width)
+        right_x = int(right.x * frame_width)
+
+        shoulder_pixel_distance = abs(left_x - right_x)
+
+        if shoulder_pixel_distance > self.CLOSE_THRESHOLD:
+            return True, "Too close! Move back."
+
         return False, ""
 
-    shoulder_diff = abs(left_shoulder.y - right_shoulder.y)
+   
+    def send_alert(self):
+        threading.Thread(
+            target=self.alert_sound.play,
+            daemon=True
+        ).start()
 
-    if shoulder_diff > SHOULDER_TILT_THRESHOLD:
-        return True, "Fix your posture! Sit straight."
+   
+    def cleanup(self):
+        self.cap.release()
+        cv2.destroyAllWindows()
+        print("[PostureGuardian] Stopped.")
 
-    return False, ""
-
-cap = cv2.VideoCapture(0)
-print("Program is Running... Press Q to quit")
-
-while cap.isOpened():
-    ret, frame = cap.read()
-    if not ret:
-        break
-
-    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    results = pose.process(rgb_frame)
-    current_time = time.time()
-
-    if results.pose_landmarks:
-        mp_drawing.draw_landmarks(frame, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
-
-        landmarks = results.pose_landmarks.landmark
-        bad, message = is_posture_bad(landmarks)
-
-        if bad and (current_time - last_alert_time > CHECK_INTERVAL):
-            print(f"⚠️ Bad posture detected: {message}")
-            send_alert(message)
-            last_alert_time = current_time
-
-        if bad:
-            cv2.putText(frame, message, (30, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-
-    cv2.imshow("Deep Working Guardian", frame)
-
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
-
-cap.release()
-cv2.destroyAllWindows()
