@@ -16,10 +16,12 @@ class PostureGuardian:
 
     CHECK_INTERVAL = 10
     VISIBILITY_THRESHOLD = 0.7
-    LEAN_THRESHOLD = 0.05        # Lean sensitivity
-    CLOSE_THRESHOLD = 350        # Distance sensitivity (pixels)
+    LEAN_THRESHOLD = 0.05
+    CLOSE_THRESHOLD = 350
 
-    def __init__(self):
+    def __init__(self, shared_state=None):
+
+        self.shared = shared_state
         self.last_alert_time = time.time() + 10
 
         # Sound
@@ -34,7 +36,6 @@ class PostureGuardian:
         # Camera
         self.cap = cv2.VideoCapture(0)
 
- 
     def run(self):
         print("[PostureGuardian] Started — monitoring posture...")
 
@@ -49,6 +50,7 @@ class PostureGuardian:
             current_time = time.time()
 
             if results.pose_landmarks:
+
                 self.mp_drawing.draw_landmarks(
                     frame,
                     results.pose_landmarks,
@@ -66,13 +68,15 @@ class PostureGuardian:
                     self.last_alert_time = current_time
 
                 if bad:
-                    cv2.putText(frame,
-                                message,
-                                (30, 50),
-                                cv2.FONT_HERSHEY_SIMPLEX,
-                                1,
-                                (0, 0, 255),
-                                2)
+                    cv2.putText(
+                        frame,
+                        message,
+                        (30, 50),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        1,
+                        (0, 0, 255),
+                        2
+                    )
 
             cv2.imshow("Posture Guardian", frame)
 
@@ -81,7 +85,6 @@ class PostureGuardian:
 
         self.cleanup()
 
- 
     def check_posture(self, landmarks, frame_width):
 
         left = landmarks[self.mp_pose.PoseLandmark.LEFT_SHOULDER]
@@ -91,13 +94,11 @@ class PostureGuardian:
                 right.visibility < self.VISIBILITY_THRESHOLD):
             return False, ""
 
-         
         vertical_diff = abs(left.y - right.y)
 
         if vertical_diff > self.LEAN_THRESHOLD:
             return True, "Sit straight! Don't lean."
 
-        
         left_x = int(left.x * frame_width)
         right_x = int(right.x * frame_width)
 
@@ -108,16 +109,13 @@ class PostureGuardian:
 
         return False, ""
 
-   
     def send_alert(self):
         threading.Thread(
             target=self.alert_sound.play,
             daemon=True
         ).start()
 
-   
     def cleanup(self):
         self.cap.release()
         cv2.destroyAllWindows()
         print("[PostureGuardian] Stopped.")
-
