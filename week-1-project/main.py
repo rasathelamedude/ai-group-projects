@@ -16,6 +16,7 @@ def main():
     power = power_optimizer.PowerOptimizer(shared)
     atmosphere = atmosphere_controller.AtmosphereController(shared)
     privacy = privacy_shield.PrivacyShield(shared)
+    posture =posture_guardian.PostureGuardian(shared)
 
     threads = [
         threading.Thread(target=power.run, daemon=True),
