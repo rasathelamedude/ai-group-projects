@@ -1,5 +1,7 @@
 from agents import distraction_blocker
 from agents import power_optimizer
+from agents import atmosphere_controller
+from agents import privacy_shield
 import shared_state
 import threading
 import time
@@ -12,10 +14,14 @@ def main():
 
     distraction = distraction_blocker.DistractionBlocker(shared)
     power = power_optimizer.PowerOptimizer(shared)
+    atmosphere = atmosphere_controller.AtmosphereController(shared)
+    privacy = privacy_shield.PrivacyShield(shared)
 
     threads = [
         threading.Thread(target=power.run, daemon=True),
         threading.Thread(target=distraction.run, daemon=True),
+        threading.Thread(target=atmosphere.run, daemon=True),
+        threading.Thread(target=privacy.run, daemon=True),
     ]
 
     for thread in threads:
