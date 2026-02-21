@@ -5,3 +5,6 @@ psutil
 pygetwindow
 plyer
 numpy
+pyautogui
+mediapipe
+win10toast
