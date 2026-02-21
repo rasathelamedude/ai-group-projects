@@ -1,126 +1,123 @@
 """
-Posture Guardian
-Detects:
-1) If user is too close to screen
-2) If user is leaning left or right
+Power Optimizer - Member 4 (Peshawa)
+Monitors battery status and charging state.
+When unplugged: enables Windows Dark Mode + lowers brightness to 30%.
+When plugged back in: restores Light Mode + brightness to 80%.
+Uses state tracking to avoid spamming commands every loop.
 """
 
-import cv2
-import mediapipe as mp
 import time
-import threading
-import pygame
+import subprocess
+
+try:
+    import psutil
+except ImportError:
+    psutil = None
 
 
-class PostureGuardian:
+class PowerOptimizer:
+    BRIGHTNESS_LOW = 30      # Brightness when on battery
+    BRIGHTNESS_NORMAL = 80   # Brightness when plugged in
 
-    CHECK_INTERVAL = 10
-    VISIBILITY_THRESHOLD = 0.7
-    LEAN_THRESHOLD = 0.05        # Lean sensitivity
-    CLOSE_THRESHOLD = 350        # Distance sensitivity (pixels)
+    def __init__(self, shared_state):
+        self.shared = shared_state
+        self.last_power_state = None  # Track previous state to avoid spam
 
-    def __init__(self):
-        self.last_alert_time = time.time() + 10
-
-        # Sound
-        pygame.mixer.init()
-        self.alert_sound = pygame.mixer.Sound("remainderr.wav")
-
-        # Mediapipe
-        self.mp_pose = mp.solutions.pose
-        self.mp_drawing = mp.solutions.drawing_utils
-        self.pose = self.mp_pose.Pose()
-
-        # Camera
-        self.cap = cv2.VideoCapture(0)
-
- 
     def run(self):
-        print("[PostureGuardian] Started — monitoring posture...")
+        """Main loop: monitor battery and toggle power-saving settings."""
+        print("[PowerOptimizer] Started — monitoring battery status...")
 
-        while self.cap.isOpened():
+        while True:
+            if psutil is None:
+                time.sleep(5)
+                continue
 
-            ret, frame = self.cap.read()
-            if not ret:
-                break
+            battery = psutil.sensors_battery()
 
-            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            results = self.pose.process(rgb_frame)
-            current_time = time.time()
+            if battery:
+                percent = battery.percent
+                charging = battery.power_plugged
 
-            if results.pose_landmarks:
-                self.mp_drawing.draw_landmarks(
-                    frame,
-                    results.pose_landmarks,
-                    self.mp_pose.POSE_CONNECTIONS
+                self.shared.set("battery_percent", percent)
+                self.shared.set("is_charging", charging)
+
+                # Only act on state TRANSITIONS (not every loop)
+                if charging != self.last_power_state:
+                    if not charging:
+                        print(f"[PowerOptimizer] 🔋 Unplugged ({percent}%) — enabling power saving mode...")
+                        self.enable_power_saving()
+                    else:
+                        print(f"[PowerOptimizer] ⚡ Plugged in ({percent}%) — restoring normal mode...")
+                        self.restore_normal_mode()
+
+                    self.last_power_state = charging
+
+            time.sleep(5)
+
+    def enable_power_saving(self):
+        """Enable dark mode and lower brightness for battery saving."""
+        self.set_dark_mode(True)
+        self.set_brightness(self.BRIGHTNESS_LOW)
+        self.shared.set("dark_mode_enabled", True)
+
+    def restore_normal_mode(self):
+        """Disable dark mode and restore brightness."""
+        self.set_dark_mode(False)
+        self.set_brightness(self.BRIGHTNESS_NORMAL)
+        self.shared.set("dark_mode_enabled", False)
+
+    def set_dark_mode(self, enable):
+        """
+        Toggle Windows Dark/Light Mode via the Registry using PowerShell.
+        Sets both App and System themes.
+        """
+        value = 0 if enable else 1  # Registry: 0 = Dark, 1 = Light
+        mode_name = "Dark" if enable else "Light"
+
+        commands = [
+            # Set App theme
+            (
+                f'Set-ItemProperty -Path '
+                f'HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize '
+                f'-Name AppsUseLightTheme -Value {value}'
+            ),
+            # Set System theme
+            (
+                f'Set-ItemProperty -Path '
+                f'HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize '
+                f'-Name SystemUsesLightTheme -Value {value}'
+            ),
+        ]
+
+        for cmd in commands:
+            try:
+                subprocess.run(
+                    ["powershell", "-Command", cmd],
+                    capture_output=True,
+                    timeout=10,
                 )
+            except Exception as e:
+                print(f"[PowerOptimizer] Error setting {mode_name} Mode: {e}")
 
-                landmarks = results.pose_landmarks.landmark
-                frame_width = frame.shape[1]
+        print(f"[PowerOptimizer] {mode_name} Mode enabled.")
 
-                bad, message = self.check_posture(landmarks, frame_width)
+    def set_brightness(self, level):
+        """
+        Set screen brightness using PowerShell WMI command.
+        Level should be 0-100.
+        """
+        cmd = (
+            f'(Get-WmiObject -Namespace root/WMI '
+            f'-Class WmiMonitorBrightnessMethods)'
+            f'.WmiSetBrightness(1, {level})'
+        )
 
-                if bad and (current_time - self.last_alert_time > self.CHECK_INTERVAL):
-                    print(f"[PostureGuardian] ⚠ {message}")
-                    self.send_alert()
-                    self.last_alert_time = current_time
-
-                if bad:
-                    cv2.putText(frame,
-                                message,
-                                (30, 50),
-                                cv2.FONT_HERSHEY_SIMPLEX,
-                                1,
-                                (0, 0, 255),
-                                2)
-
-            cv2.imshow("Posture Guardian", frame)
-
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
-
-        self.cleanup()
-
- 
-    def check_posture(self, landmarks, frame_width):
-
-        left = landmarks[self.mp_pose.PoseLandmark.LEFT_SHOULDER]
-        right = landmarks[self.mp_pose.PoseLandmark.RIGHT_SHOULDER]
-
-        if (left.visibility < self.VISIBILITY_THRESHOLD or
-                right.visibility < self.VISIBILITY_THRESHOLD):
-            return False, ""
-
-         
-        vertical_diff = abs(left.y - right.y)
-
-        if vertical_diff > self.LEAN_THRESHOLD:
-            return True, "Sit straight! Don't lean."
-
-        
-        left_x = int(left.x * frame_width)
-        right_x = int(right.x * frame_width)
-
-        shoulder_pixel_distance = abs(left_x - right_x)
-
-        if shoulder_pixel_distance > self.CLOSE_THRESHOLD:
-            return True, "Too close! Move back."
-
-        return False, ""
-
-   
-    def send_alert(self):
-        threading.Thread(
-            target=self.alert_sound.play,
-            daemon=True
-        ).start()
-
-   
-    def cleanup(self):
-        self.cap.release()
-        cv2.destroyAllWindows()
-        print("[PostureGuardian] Stopped.")
-
-
-
-   
+        try:
+            subprocess.run(
+                ["powershell", "-Command", cmd],
+                capture_output=True,
+                timeout=10,
+            )
+            print(f"[PowerOptimizer] Brightness set to {level}%.")
+        except Exception as e:
+            print(f"[PowerOptimizer] Error setting brightness: {e}")
