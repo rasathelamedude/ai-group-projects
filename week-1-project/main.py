@@ -23,6 +23,8 @@ def main():
         threading.Thread(target=distraction.run, daemon=True),
         threading.Thread(target=atmosphere.run, daemon=True),
         threading.Thread(target=privacy.run, daemon=True),
+        threading.Thread(target=posture.run, daemon=True),
+        
     ]
 
     for thread in threads:
