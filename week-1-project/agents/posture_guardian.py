@@ -28,10 +28,18 @@ class PostureGuardian:
         pygame.mixer.init()
         self.alert_sound = pygame.mixer.Sound("agents/reminder.mp3")
 
-        # Mediapipe
-        self.mp_pose = mp.solutions.pose
-        self.mp_drawing = mp.solutions.drawing_utils
-        self.pose = self.mp_pose.Pose()
+        self.fallback_mode = not hasattr(mp, "solutions")
+
+        # Mediapipe (primary mode)
+        if not self.fallback_mode:
+            self.mp_pose = mp.solutions.pose
+            self.mp_drawing = mp.solutions.drawing_utils
+            self.pose = self.mp_pose.Pose()
+        else:
+            self.face_cascade = cv2.CascadeClassifier(
+                cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+            )
+            print("[PostureGuardian] Mediapipe pose not available; using OpenCV fallback.")
 
         # Camera
         self.cap = cv2.VideoCapture(0)
@@ -45,9 +53,39 @@ class PostureGuardian:
             if not ret:
                 break
 
+            if self.shared is not None:
+                self.shared.set("webcam_frame", frame)
+
+            current_time = time.time()
+
+            if self.fallback_mode:
+                bad, message = self.check_posture_fallback(frame)
+
+                if bad and (current_time - self.last_alert_time > self.CHECK_INTERVAL):
+                    print(f"[PostureGuardian] ⚠ {message}")
+                    self.send_alert()
+                    self.last_alert_time = current_time
+
+                if bad:
+                    cv2.putText(
+                        frame,
+                        message,
+                        (30, 50),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        1,
+                        (0, 0, 255),
+                        2
+                    )
+
+                cv2.imshow("Posture Guardian", frame)
+
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    break
+
+                continue
+
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             results = self.pose.process(rgb_frame)
-            current_time = time.time()
 
             if results.pose_landmarks:
 
@@ -105,6 +143,26 @@ class PostureGuardian:
         shoulder_pixel_distance = abs(left_x - right_x)
 
         if shoulder_pixel_distance > self.CLOSE_THRESHOLD:
+            return True, "Too close! Move back."
+
+        return False, ""
+
+    def check_posture_fallback(self, frame):
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        faces = self.face_cascade.detectMultiScale(
+            gray,
+            scaleFactor=1.1,
+            minNeighbors=5,
+            minSize=(60, 60)
+        )
+
+        if len(faces) == 0:
+            return False, ""
+
+        # Largest face approximates nearest distance to camera.
+        _, _, face_width, _ = max(faces, key=lambda face: face[2] * face[3])
+
+        if face_width > 320:
             return True, "Too close! Move back."
 
         return False, ""
