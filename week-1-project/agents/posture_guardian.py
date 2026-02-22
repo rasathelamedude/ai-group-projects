@@ -26,7 +26,7 @@ class PostureGuardian:
 
         # Sound
         pygame.mixer.init()
-        self.alert_sound = pygame.mixer.Sound("reminder.mp3")
+        self.alert_sound = pygame.mixer.Sound("agents/reminder.mp3")
 
         # Mediapipe
         self.mp_pose = mp.solutions.pose
