@@ -135,6 +135,40 @@ def best_first_search(start_board):
     return None  # No solution which is rarely the case
 
 
+def save_solution_file(initial_board, solution_steps):
+    """
+    Save solution to solution.txt in a nice format.
+    """
+    with open("solution.txt", "w", encoding="utf-8") as f:
+        f.write("=" * 50 + "\n")
+        f.write("        8-PUZZLE SOLUTION - BEST-FIRST SEARCH\n")
+        f.write("=" * 50 + "\n\n")
+        f.write(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+
+        # Initial board
+        f.write("INITIAL BOARD:\n")
+        f.write("-" * 13 + "\n")
+        for row in initial_board:
+            f.write("| " + " | ".join(str(x) if x != 0 else " " for x in row) + " |\n")
+        f.write("-" * 13 + "\n\n")
+
+        # Solution steps
+        f.write(f"SOLUTION (Total Cost: {len(solution_steps) - 1} moves):\n\n")
+
+        for step_num, board in enumerate(solution_steps):
+            f.write(f"Step {step_num}:\n")
+            f.write("-" * 13 + "\n")
+            for row in board:
+                f.write(
+                    "| " + " | ".join(str(x) if x != 0 else " " for x in row) + " |\n"
+                )
+            f.write("-" * 13 + "\n\n")
+
+        f.write("=" * 50 + "\n")
+        f.write(f"GOAL REACHED IN {len(solution_steps) - 1} MOVES!\n")
+        f.write("=" * 50 + "\n")
+
+
 @app.route("/generate", methods=["GET"])
 def generate():
     board = generate_random_puzzle()
@@ -143,30 +177,38 @@ def generate():
 
 @app.route("/solve", methods=["POST"])
 def solve():
-    # Get the board from the request body
-    data = request.get_json()
-    board = data.get("board")
+    try:
 
-    # Validate the input board
-    if not board:
-        return jsonify({"error": "Board is required"}), 400
+        # Get the board from the request body
+        data = request.get_json()
+        board = data.get("board")
 
-    # Measure the execution time of the best-first search algorithm
-    start_time = datetime.now()
-    solution_path = best_first_search(board)
-    end_time = datetime.now()
-    execution_time = (end_time - start_time).total_seconds()
+        # Validate the input board
+        if not board:
+            return jsonify({"error": "Board is required"}), 400
 
-    # Return the solution if found
-    if solution_path:
+        print("[Backend] Solving puzzle...")
+        solution_steps = best_first_search(board)
+
+        if solution_steps is None:
+            return jsonify({"error": "No solution found"}), 500
+
+        # Save to file
+        save_solution_file(board, solution_steps)
+        print(f"[Backend] Solution found! Cost: {len(solution_steps) - 1} moves")
+
         return jsonify(
             {
-                "solution": solution_path,
-                "message": f"Puzzle solved in {execution_time:.2f} seconds",
+                "initial_board": board,
+                "steps": solution_steps,
+                "total_cost": len(solution_steps) - 1,
+                "message": "Solution saved to solution.txt",
             }
         )
-    else:
-        return jsonify({"error": "No solution found"}), 500
+
+    except Exception as e:
+        print(f"[Backend] Error: {str(e)}")
+        return jsonify({"error": "An error occurred while solving the puzzle"}), 500
 
 
 if __name__ == "__main__":
