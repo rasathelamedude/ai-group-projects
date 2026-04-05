@@ -42,3 +42,22 @@ def draw_board_ascii(state: tuple) -> str:
       f"{rows[2]}"
     )
     
+    
+def write_solution_to_file(start: tuple, path, cost, filename: str = "solution.txt"):
+    pass
+      
+      
+def _flush(lines, filename):
+    """
+    Helper function to write the accumulated lines to the specified file.
+    
+    Args:
+        lines: A list of strings representing the lines to write to the file.
+        filename: The name of the file to write to.
+    Returns:
+        None
+    """
+    
+    with open(filename, "w", encoding="utf-8") as file:
+        file.write("\n".join(lines))
+    
