@@ -44,9 +44,70 @@ def draw_board_ascii(state: tuple) -> str:
     
     
 def write_solution_to_file(start: tuple, path, cost, filename: str = "solution.txt"):
-    pass
+    """
+    The function writes a human-readable solution log to a specified file.
+    
+    The log includes:
+      - Algorithm header and heuristic details
+      - Initial board diagram
+      - Every step (move name + board diagram + running cost)
+      - Final summary line with total steps and total cost
+    
+    Args:
+        start: The initial state of the puzzle as a tuple.
+        path: A list of tuples representing the solution path, where each tuple represents a move and the resulting state.
+        cost: The total cost of the solution path.
+        filename: The name of the file to write the solution log to. Default is "solution.txt".
+    Returns:
+        None
+    """
+    
+    lines = []
+    
+    # --- Header ---
+    lines.append("=" * 50)
+    lines.append("  8-PUZZLE SOLVER — BEST-FIRST SEARCH")
+    lines.append("  Heuristic : Manhattan Distance")
+    lines.append("  Cost/move : 1")
+    lines.append("=" * 50)
+    lines.append("")
+    
+    # --- Initial board ---
+    lines.append("INITIAL BOARD:")
+    lines.append(draw_board_ascii(start))
+    lines.append("")
+    
+    # --- No solution case ---
+    if path is None:
+        lines.append("NO SOLUTION FOUND.")
+        _flush(lines, filename)
+        return
       
-      
+    # --- Solution summary ---
+    lines.append(f"TOTAL STEPS : {len(path)}")
+    lines.append(f"TOTAL COST  : {cost}  (each move = 1)")
+    lines.append("")
+    lines.append("-" * 50)
+    lines.append("SOLUTION STEPS:")
+    lines.append("-" * 50)
+    lines.append("")
+    
+    
+    # --- Solution Steps (board state at each step) ---
+    for step_num, (move_name, state) in enumerate(path, start=1):
+        lines.append(
+          f"Step {step_num:>3}  |  Move: {move_name:<5}  |  Cost so far: {step_num}"
+        )
+        lines.append(draw_board_ascii(state))
+        lines.append("")
+        
+    # --- Footer ---
+    lines.append("=" * 50)
+    lines.append(f"  GOAL REACHED!  Steps: {len(path)}  Total Cost: {cost}")
+    lines.append("=" * 50)
+    
+    _flush(lines, filename)
+
 def _flush(lines, filename):
     """
     Helper function to write the accumulated lines to the specified file.
