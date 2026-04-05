@@ -94,12 +94,14 @@ def write_solution_to_file(start: tuple, path, cost, filename: str = "solution.t
     
     
     # --- Solution Steps (board state at each step) ---
-    for step_num, (move_name, state) in enumerate(path, start=1):
+    step_num = 1
+    for move_name, state in path:
         lines.append(
           f"Step {step_num:>3}  |  Move: {move_name:<5}  |  Cost so far: {step_num}"
         )
         lines.append(draw_board_ascii(state))
         lines.append("")
+        step_num += 1
         
     # --- Footer ---
     lines.append("=" * 50)
