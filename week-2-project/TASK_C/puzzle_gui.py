@@ -9,7 +9,7 @@ import threading
 
 from puzzle_board     import random_solvable_state
 from puzzle_algorithm import best_first_search
-from puzzle_writer    import write_solution
+from puzzle_writer    import write_solution_to_file
 from puzzle_canvas    import make_canvas, draw_board, BG, PAD, CELL, GAP
 
 # ── Colours used only in the control panel ────────────────────────────────────
@@ -186,7 +186,7 @@ class EightPuzzleApp:
     def _solve(self):
         """Run BFS + write solution.txt (background thread)."""
         path, cost = best_first_search(self._start)
-        write_solution(self._start, path, cost)
+        write_solution_to_file(self._start, path, cost)
         self._path = path
         self._cost = cost
         self.root.after(0, self._on_solved)   # hand back to main thread
