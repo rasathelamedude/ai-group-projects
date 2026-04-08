@@ -1,0 +1,14 @@
+{
+  "name": "week4-project-root",
+  "private": true,
+  "workspaces": [
+    "react-team-app"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace react-team-app",
+    "dev:frontend": "npm run dev --workspace react-team-app",
+    "dev:backend": "python -m uvicorn backend.main:app --reload --port 8000",
+    "build": "npm run build --workspace react-team-app",
+    "test": "python -m unittest discover backend/tests"
+  }
+}
