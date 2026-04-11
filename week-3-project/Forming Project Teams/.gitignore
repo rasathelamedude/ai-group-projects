@@ -5,7 +5,7 @@ __pycache__/
 .python-version
 .venv/
 venv/
-env/
+frontend/.env*
 .idea/
 .vscode/
 node_modules/
