@@ -4,9 +4,9 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from backend.calculate_combination import calculate_combination
-from backend.build_binomial_table import build_binomial_table
-from backend.validation import validate_team_inputs
+from calculate_combination import calculate_combination
+from build_binomial_table import build_binomial_table
+from validation import validate_team_inputs
 
 
 class CalculationRequest(BaseModel):
