@@ -36,6 +36,12 @@ def create_population(size: int) -> List[Chromosome]:
     return population
 
 
+"""
+The fitness of a chromosome is the number of non-attacking bishop pairs.
+The more non-attacking pairs, the higher the fitness. 
+"""
+
+
 def calculate_fitness(chromosome: Chromosome) -> int:
     # Count non-attacking bishop pairs
     non_attacking_pairs = 0
@@ -47,6 +53,11 @@ def calculate_fitness(chromosome: Chromosome) -> int:
                 non_attacking_pairs += 1
 
     return non_attacking_pairs
+
+
+"""
+Two bishops are attacking each other if the difference in their column positions equals the difference in their row positions.
+"""
 
 
 def _is_attacking(chromosome: Chromosome, row1: int, row2: int) -> bool:
