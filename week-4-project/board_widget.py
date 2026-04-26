@@ -4,7 +4,7 @@ from models import Chromosome
 BOARD_SIZE = 8
 
 
-class BoardUi(tk.Frame):
+class BoardWidget(tk.Frame):
     # Constructor
     def __init__(self, parent, **kwargs):
         super().__init__(parent, **kwargs)
