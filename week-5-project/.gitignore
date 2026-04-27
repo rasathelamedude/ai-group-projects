@@ -1,5 +1,4 @@
 data/
 results/
-features/feature_vectors.pkl
 __pycache__/
 *.pyc
