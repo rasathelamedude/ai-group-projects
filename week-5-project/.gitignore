@@ -1,4 +1,4 @@
 data/
-results/
 __pycache__/
+features/*.pkl
 *.pyc

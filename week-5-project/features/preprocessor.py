@@ -2,9 +2,7 @@
 This file is used to normalize and clean up the data and transform it into a standard format that can be used by the clasification models.
 """
 
-from sklearn.preprocessing import StandardScaler
 from skimage import io, color, transform
-import numpy as np
 import pathlib
 import os
 import pickle
@@ -59,13 +57,16 @@ def load_images(data_folder: str) -> tuple:
             images.append(image)
             labels.append(folder)
 
+    print(f"Loaded {len(images)} images.")
     return images, labels
 
 
 def resize_image(image):
     """The images in the dataset have different sizes, but we want to have a standard size for all the images to make it easier for the model to learn. We will resize all the images to 64x64 pixels."""
 
-    return transform.resize(image, (64, 64))
+    resized_image = transform.resize(image, (64, 64))
+
+    return resized_image
 
 
 def normalize_pixel_values(image):
@@ -93,8 +94,14 @@ def save_preprocessed_data(images, labels):
     )
 
 
+# 1. Load the images
 images, labels = load_images(DATA_FOLDER_PATH)
+
+# 2. Fix channels, resize and normalize pixel values
 images = [fix_image_channels(image) for image in images]
 images = [resize_image(image) for image in images]
 images = [normalize_pixel_values(image) for image in images]
+print("Finished preprocessing the images. Saving...")
+
+# 3. Save the preprocessed images
 save_preprocessed_data(images, labels)
