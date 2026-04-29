@@ -1,21 +1,14 @@
 """
 knn.py
 
-This file trains a k-Nearest Neighbors (kNN) classifier on the
-feature vectors produced by extractor.py.
+Trains a k-Nearest Neighbors (kNN) classifier on the feature vectors
+produced by extractor.py.
 
-kNN works by memorising all training examples and then, for each new
-image, finding the k training images whose feature vector is closest
-(using Euclidean distance).  The most common class among those k
-neighbours wins the vote.
+kNN memorises all training examples and finds the k closest training
+images (Euclidean distance) for each new image. The most common class
+among those k neighbours wins the vote.
 
-The tricky part is choosing the right value of k:
-  - Too small (k=1) : the model memorises noise, giving poor test accuracy
-  - Too large (k=19): the model ignores local patterns and underfits
-
-We find the best k by running 5-fold cross-validation on odd values
-from 1 to 19 and picking the k that scores highest on average.
-
+Best k is chosen via 5-fold cross-validation on odd values 1–19.
 Results are saved to results/knn_results.pkl.
 """
 
@@ -23,64 +16,78 @@ import time
 import pickle
 import pathlib
 
-import numpy as np
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.model_selection import cross_val_score
-from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+from sklearn.metrics import (
+    accuracy_score,
+    classification_report,
+    confusion_matrix,
+)
+
+# ── File paths ─────────────────────────────────────────────────────────────
+FEATURE_VECTORS_PATH = (
+    pathlib.Path(__file__).parent.parent / "features" / "feature_vectors.pkl"
+)
+RESULTS_PATH = (
+    pathlib.Path(__file__).parent.parent / "results" / "knn_results.pkl"
+)
+
+# ── kNN settings ───────────────────────────────────────────────────────────
+K_VALUES_TO_TEST = range(1, 20, 2)  # 1, 3, 5 … 19  (odd only → no ties)
+CV_FOLDS         = 5
 
 
-# ── File paths ────────────────────────────────────────────────────────────────
-FEATURE_VECTORS_PATH = pathlib.Path(__file__).parent.parent / "features" / "feature_vectors.pkl"
-RESULTS_PATH         = pathlib.Path(__file__).parent.parent / "results"  / "knn_results.pkl"
-
-# ── kNN settings ──────────────────────────────────────────────────────────────
-# We only test odd values of k to avoid ties in the majority vote.
-K_VALUES_TO_TEST = range(1, 20, 2)   # 1, 3, 5, 7, 9, 11, 13, 15, 17, 19
-CV_FOLDS         = 5                  # 5-fold cross-validation
-
-
-# ── Helper functions ──────────────────────────────────────────────────────────
+# ── Helper functions ───────────────────────────────────────────────────────
 
 def load_feature_vectors():
     """
-    Load the train/test splits that extractor.py prepared.
+    Load the shared train/test split saved by extractor.py.
 
-    All four classifiers load from the same pickle so we always compare
-    models trained on identical data with no information leakage.
+    All four classifiers (kNN, Bayesian, SVM, Neural Network) load from
+    the same pickle — this guarantees a fair comparison with no
+    information leakage between training and test data.
     """
     with open(FEATURE_VECTORS_PATH, "rb") as f:
         data = pickle.load(f)
 
     print(f"Loaded feature vectors from {FEATURE_VECTORS_PATH}")
-    return data["X_train"], data["X_test"], data["y_train"], data["y_test"], data["label_names"]
+    return (
+        data["X_train"],
+        data["X_test"],
+        data["y_train"],
+        data["y_test"],
+        data["label_names"],
+    )
 
 
 def find_best_k(X_train, y_train):
     """
-    Try every odd value of k from 1 to 19 using 5-fold cross-validation
-    and return the k that gives the highest average validation accuracy.
+    Select the best k using 5-fold cross-validation.
 
-    Cross-validation works by splitting the training data into 5 equal
-    parts (folds).  For each k, we train on 4 folds and validate on 1,
-    rotating which fold is held out.  The average accuracy across all 5
-    rotations gives a stable estimate of how well that k generalises.
+    Only odd k values are tested to prevent majority-vote ties.
+    For each k, the training data is split into 5 folds: 4 folds are
+    used for training and 1 for validation, rotating each time.
+    The k with the highest mean validation accuracy is returned.
     """
     print(f"Tuning k with {CV_FOLDS}-fold cross-validation ...")
-    print(f"Testing k values: {list(K_VALUES_TO_TEST)}")
-    print()
+    print(f"Testing k values: {list(K_VALUES_TO_TEST)}\n")
 
-    best_k     = 1
-    best_score = 0.0
+    best_k, best_score = 1, 0.0
 
     for k in K_VALUES_TO_TEST:
-        model = KNeighborsClassifier(n_neighbors=k, metric="euclidean", n_jobs=-1)
-
-        # cross_val_score returns one accuracy per fold; we take the mean.
-        scores     = cross_val_score(model, X_train, y_train, cv=CV_FOLDS, scoring="accuracy")
+        model = KNeighborsClassifier(
+            n_neighbors=k, metric="euclidean", n_jobs=-1
+        )
+        scores     = cross_val_score(
+            model, X_train, y_train, cv=CV_FOLDS, scoring="accuracy"
+        )
         mean_score = scores.mean()
         std_score  = scores.std()
 
-        print(f"  k={k:2d}  mean accuracy = {mean_score:.4f}  (std = {std_score:.4f})")
+        print(
+            f"  k={k:2d}  mean accuracy = {mean_score:.4f}"
+            f"  (std = {std_score:.4f})"
+        )
 
         if mean_score > best_score:
             best_score = mean_score
@@ -92,17 +99,19 @@ def find_best_k(X_train, y_train):
 
 def train_knn(X_train, y_train, best_k):
     """
-    Train the final kNN model using the best k we found during tuning.
+    Fit the final kNN model using the best k.
 
-    kNN does not really 'train' in the traditional sense — it just stores
-    all the training examples.  The fit() call is almost instant; the
-    expensive part is predict() which has to search for neighbours.
+    kNN does not build an explicit model — it stores all training
+    examples. fit() is nearly instant; predict() is the expensive step
+    as it searches for the nearest neighbours at query time.
     """
-    model = KNeighborsClassifier(n_neighbors=best_k, metric="euclidean", n_jobs=-1)
+    model = KNeighborsClassifier(
+        n_neighbors=best_k, metric="euclidean", n_jobs=-1
+    )
 
-    start_time = time.time()
+    start      = time.time()
     model.fit(X_train, y_train)
-    train_time = time.time() - start_time
+    train_time = time.time() - start
 
     print(f"Model fitted in {train_time:.4f}s  (k={best_k})")
     return model, train_time
@@ -110,37 +119,50 @@ def train_knn(X_train, y_train, best_k):
 
 def evaluate_model(model, X_test, y_test, label_names):
     """
-    Run the trained model on the held-out test set and collect all metrics.
+    Evaluate on the held-out test set and return all metrics.
 
-    Precision tells us: of everything predicted as koala, how many were
-    really koala?  Recall tells us: of all real koalas, how many did we find?
-    F1 is the harmonic mean of the two — it is the number to look at when
-    precision and recall are both important.
+    Metrics collected:
+      - Accuracy        : overall correct predictions
+      - Macro F1        : average F1 across all 10 classes (unweighted)
+                          — key metric for the comparative analysis
+      - Per-class report: precision, recall, F1 per mammal class
+      - Confusion matrix: shows which classes are confused with each other
     """
-    start_time = time.time()
+    start      = time.time()
     y_pred     = model.predict(X_test)
-    infer_time = time.time() - start_time
+    infer_time = time.time() - start
 
     accuracy    = accuracy_score(y_test, y_pred)
-    report_dict = classification_report(y_test, y_pred, target_names=label_names, output_dict=True)
-    report_text = classification_report(y_test, y_pred, target_names=label_names)
+    report_dict = classification_report(
+        y_test, y_pred, target_names=label_names, output_dict=True
+    )
+    report_text = classification_report(
+        y_test, y_pred, target_names=label_names
+    )
     conf_matrix = confusion_matrix(y_test, y_pred)
 
+    # Extract Macro F1 explicitly — needed by compare.py for model ranking
+    macro_f1 = report_dict["macro avg"]["f1-score"]
+
     print(f"\nTest accuracy  : {accuracy:.4f}")
+    print(f"Macro F1       : {macro_f1:.4f}")
     print(f"Inference time : {infer_time:.4f}s")
     print("\nFull classification report:")
     print(report_text)
 
-    return y_pred, accuracy, report_dict, conf_matrix, infer_time
+    return y_pred, accuracy, macro_f1, report_dict, conf_matrix, infer_time
 
 
-def save_results(y_test, y_pred, accuracy, report, conf_matrix,
-                 label_names, best_k, train_time, infer_time):
+def save_results(
+    y_test, y_pred, accuracy, macro_f1,
+    report, conf_matrix, label_names,
+    best_k, train_time, infer_time,
+):
     """
-    Save all evaluation results to a pickle file.
+    Save all evaluation results to a pickle file for compare.py.
 
-    We include best_k so the analysis scripts can report which k value
-    was selected during tuning.
+    macro_f1 is stored at the top level (not buried inside report)
+    so compare.py can read it directly without re-parsing the report.
     """
     results = {
         "model_name"       : "KNN",
@@ -148,6 +170,7 @@ def save_results(y_test, y_pred, accuracy, report, conf_matrix,
         "y_test"           : y_test,
         "y_pred"           : y_pred,
         "accuracy"         : accuracy,
+        "macro_f1"         : macro_f1,      # ← top-level for compare.py
         "report"           : report,
         "confusion_matrix" : conf_matrix,
         "label_names"      : label_names,
@@ -163,34 +186,42 @@ def save_results(y_test, y_pred, accuracy, report, conf_matrix,
     print(f"Results saved to {RESULTS_PATH}")
 
 
-# ── Run the kNN classifier ────────────────────────────────────────────────────
-# This code runs automatically when you execute this file directly:
-#   python classifiers/knn.py
+# ── Entry point ────────────────────────────────────────────────────────────
 
-print("=" * 60)
-print("  kNN Classifier")
-print("=" * 60)
+def main():
+    print("=" * 60)
+    print("  kNN Classifier")
+    print("=" * 60)
 
-# 1. Load the shared feature vectors
-X_train, X_test, y_train, y_test, label_names = load_feature_vectors()
-print(f"Training samples: {len(X_train)}   Test samples: {len(X_test)}")
+    # 1. Load shared feature vectors (same split used by all 4 models)
+    X_train, X_test, y_train, y_test, label_names = load_feature_vectors()
+    print(f"Training samples : {len(X_train)}")
+    print(f"Test samples     : {len(X_test)}")
+    print(f"Classes ({len(label_names)})     : {label_names}")
 
-# 2. Find the best k using cross-validation
-print()
-best_k = find_best_k(X_train, y_train)
+    # 2. Tune k via 5-fold cross-validation
+    print()
+    best_k = find_best_k(X_train, y_train)
 
-# 3. Train the final kNN model with the best k
-print()
-trained_model, train_time = train_knn(X_train, y_train, best_k)
+    # 3. Train final model with best k
+    print()
+    trained_model, train_time = train_knn(X_train, y_train, best_k)
 
-# 4. Evaluate on the test set
-print("\nEvaluating on test set ...")
-y_pred, accuracy, report, conf_matrix, infer_time = evaluate_model(
-    trained_model, X_test, y_test, label_names
-)
+    # 4. Evaluate on held-out test set
+    print("\nEvaluating on test set ...")
+    y_pred, accuracy, macro_f1, report, conf_matrix, infer_time = (
+        evaluate_model(trained_model, X_test, y_test, label_names)
+    )
 
-# 5. Save results to disk
-save_results(y_test, y_pred, accuracy, report, conf_matrix,
-             label_names, best_k, train_time, infer_time)
+    # 5. Save all results for compare.py
+    save_results(
+        y_test, y_pred, accuracy, macro_f1,
+        report, conf_matrix, label_names,
+        best_k, train_time, infer_time,
+    )
 
-print("\nkNN training and evaluation complete.")
+    print("\nkNN training and evaluation complete.")
+
+
+if __name__ == "__main__":
+    main()
