@@ -14,6 +14,7 @@ import numpy as np
 from skimage.feature import hog
 from skimage import color
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
 
 PREPROCESSED_DATA_PATH = pathlib.Path(__file__).parent / "preprocessed_data.pkl"
 VECTORIZED_FEATURES_PATH = pathlib.Path(__file__).parent / "vector_features.pkl"
@@ -31,9 +32,18 @@ def load_preprocessed_images() -> tuple:
 
 def extract_color_histogram(image):
     color_histogram = []
+
     for channel in range(image.shape[2]):
         # Count how many pixels fall into each of the 32 brightness buckets for this channel
         histogram, _ = np.histogram(image[:, :, channel], bins=32, range=(0, 1))
+
+        """
+        [0.00 – 0.03125) 32
+        [0.03125 – 0.0625) 12
+        [0.0625 – 0.09375) 15
+        ...
+        [0.96875 – 1.0]
+        """
 
         color_histogram.extend(histogram)
 
@@ -64,11 +74,15 @@ def save_vector_features(features, labels):
         features, labels, test_size=0.2, random_state=42
     )
 
+    scalar = StandardScaler()
+    X_train_scaled = scalar.fit_transform(X_train)
+    X_test_scaled = scalar.fit_transform(X_test)
+
     with open(VECTORIZED_FEATURES_PATH, "wb") as f:
         pickle.dump(
             {
-                "X_train": X_train,
-                "X_test": X_test,
+                "X_train": X_train_scaled,
+                "X_test": X_test_scaled,
                 "y_train": y_train,
                 "y_test": y_test,
             },

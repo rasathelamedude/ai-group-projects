@@ -40,7 +40,7 @@ def fix_image_channels(image):
 
     return image
 
-
+# x -> y
 def load_images(data_folder: str) -> tuple:
     """Load all the images and labels from the data folder."""
     images = []
@@ -62,22 +62,14 @@ def load_images(data_folder: str) -> tuple:
 
 
 def resize_image(image):
-    """The images in the dataset have different sizes, but we want to have a standard size for all the images to make it easier for the model to learn. We will resize all the images to 64x64 pixels."""
+    """The images in the dataset have different sizes, but we want to have a standard size for all the images to make it easier for the model to learn. We will resize all the images to 64x64 pixels.
+    
+    The funciton transform.resize() already handles pixel value normalization
+    """
 
     resized_image = transform.resize(image, (64, 64))
 
     return resized_image
-
-
-def normalize_pixel_values(image):
-    """
-    Each image's pixlel values are between 0-255
-
-    For more stable and easier calculations, we want to normalize the pixel values to be between 0 and 1.
-    Where 0 means the pixel is black and 1 means the pixel is white.
-    """
-
-    return image / 255.0
 
 
 def save_preprocessed_data(images, labels):
@@ -100,7 +92,6 @@ images, labels = load_images(DATA_FOLDER_PATH)
 # 2. Fix channels, resize and normalize pixel values
 images = [fix_image_channels(image) for image in images]
 images = [resize_image(image) for image in images]
-images = [normalize_pixel_values(image) for image in images]
 print("Finished preprocessing the images. Saving...")
 
 # 3. Save the preprocessed images
