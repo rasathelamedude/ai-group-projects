@@ -1,255 +1,203 @@
-import os
+"""
+classifiers/neural_network.py — Multi-Layer Perceptron (MLP) neural network
+
+IMPORTANT: This is NOT a CNN.
+This is an MLPClassifier trained on extracted feature vectors (HOG + HSV histogram).
+It does not process raw pixel images.  It learns weighted combinations of the
+~1892-dimensional feature vectors through three hidden layers.
+
+HOW THE MLP WORKS FOR THIS PROJECT:
+  Each hidden layer learns increasingly abstract combinations of the input
+  features.  With 10 classes and ~800 training samples, the architecture
+  (512 → 256 → 128) is large enough to capture complexity but not so large
+  that it immediately overfits.
+
+  - StandardScaler normalises the feature vector so no feature dominates the
+    gradient updates during training.
+  - PCA(200) compresses the ~1892-dim input to 200 principal components.
+    This removes noise and reduces training time significantly.
+  - Adam optimiser adapts the learning rate automatically per parameter.
+  - Early stopping monitors a 10% validation split and halts training if
+    accuracy does not improve for 20 consecutive iterations — prevents overfit.
+  - alpha=0.0001 is L2 regularisation (weight decay) — penalises very large
+    weights to improve generalisation.
+
+LABEL ENCODING:
+  MLPClassifier requires numeric targets.  LabelEncoder converts string class
+  names (e.g. "zebra") to integers (e.g. 8).  The fitted LabelEncoder is saved
+  alongside the model so that server.py can decode integer predictions back to
+  real animal names.
+
+PIPELINE: StandardScaler → PCA(200) → MLPClassifier(512→256→128→10)
+"""
+
+import time
 import pickle
+import pathlib
 import numpy as np
-import warnings
-warnings.filterwarnings("ignore")
-
 from sklearn.neural_network import MLPClassifier
-from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold
-from sklearn.preprocessing import StandardScaler, LabelEncoder
-from sklearn.metrics import (
-    accuracy_score, classification_report,
-    confusion_matrix, f1_score
-)
+from sklearn.preprocessing import LabelEncoder
+from sklearn.decomposition import PCA
+from sklearn.pipeline import make_pipeline
+from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+
+# ── Paths ─────────────────────────────────────────────────────────────────────
+BASE_DIR      = pathlib.Path(__file__).parent.parent
+FEATURES_PATH = BASE_DIR / "features" / "vector_features.pkl"
+RESULTS_PATH  = BASE_DIR / "results"  / "nn_results.pkl"
+
+ARCHITECTURE = (512, 256, 128)
 
 
-# ──────────────────────────────────────────────
-#  Paths
-# ──────────────────────────────────────────────
+# ── Functions ─────────────────────────────────────────────────────────────────
 
-BASE_DIR        = os.path.dirname(os.path.abspath(__file__))
-FEATURES_PATH   = os.path.join(BASE_DIR, "..", "features", "feature_vectors.pkl")
-RESULTS_PATH    = os.path.join(BASE_DIR, "..", "results", "nn_results.pkl")
-
-
-# ──────────────────────────────────────────────
-#  Load Features
-# ──────────────────────────────────────────────
-
-def load_features(path: str) -> tuple[np.ndarray, np.ndarray]:
-    """
-    Load pre-extracted feature vectors and labels from a pickle file.
-
-    Expected format inside the .pkl:
-        dict with keys 'features' (ndarray) and 'labels' (list or ndarray)
-
-    Returns:
-        X : feature matrix  (n_samples, n_features)
-        y : label array     (n_samples,)
-    """
-    if not os.path.exists(path):
+def load_data():
+    """Load the train/test feature vectors saved by extractor.py."""
+    if not FEATURES_PATH.exists():
         raise FileNotFoundError(
-            f"Feature file not found at:\n  {path}\n"
-            "Make sure Member 1 has run extractor.py first."
+            f"vector_features.pkl not found at {FEATURES_PATH}\n"
+            "Run:  python features/extractor.py"
         )
-
-    with open(path, "rb") as f:
-        data = pickle.load(f)
-
-    X = np.array(data["features"])
-    y = np.array(data["labels"])
-
-    print(f"[INFO] Features loaded — {X.shape[0]} samples, {X.shape[1]} features each.")
-    print(f"[INFO] Classes found : {sorted(set(y))}\n")
-    return X, y
+    with open(FEATURES_PATH, "rb") as f:
+        d = pickle.load(f)
+    X_train = np.array(d["X_train"])
+    X_test  = np.array(d["X_test"])
+    y_train = list(d["y_train"])
+    y_test  = list(d["y_test"])
+    return X_train, X_test, y_train, y_test
 
 
-# ──────────────────────────────────────────────
-#  Preprocessing
-# ──────────────────────────────────────────────
-
-def preprocess(
-    X: np.ndarray,
-    y: np.ndarray,
-    test_size: float = 0.2,
-    random_state: int = 42
-) -> tuple:
+def encode_labels(y_train, y_test):
     """
-    Encode labels, scale features, and split into train/test sets.
+    MLPClassifier requires numeric targets.  LabelEncoder maps each unique
+    class name to an integer (sorted alphabetically):
+      brown_bear → 0, camel → 1, dolphin → 2, ..., zebra → 9
 
-    Neural networks are sensitive to feature scale, so StandardScaler
-    (zero mean, unit variance) is applied after splitting to avoid
-    data leakage from the test set.
-
-    Returns:
-        X_train, X_test, y_train, y_test, scaler, label_encoder
+    The fitted encoder is returned so predictions can be decoded back to
+    the original animal names.
     """
-    # Encode string labels → integers
-    le = LabelEncoder()
-    y_encoded = le.fit_transform(y)
+    le          = LabelEncoder()
+    y_train_enc = le.fit_transform(y_train)
+    y_test_enc  = le.transform(y_test)
+    return y_train_enc, y_test_enc, le
 
-    # Stratified split keeps class proportions equal in both sets
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y_encoded,
-        test_size=test_size,
-        random_state=random_state,
-        stratify=y_encoded
+
+def build_model(n_classes):
+    """Build the PCA → MLP pipeline. No StandardScaler — extractor.py already scaled."""
+    print(f"Architecture: input(~1860) → PCA(200) → {ARCHITECTURE} → {n_classes} classes")
+    return make_pipeline(
+        PCA(n_components=200, random_state=42),
+        MLPClassifier(
+            hidden_layer_sizes  = ARCHITECTURE,
+            activation          = "relu",
+            solver              = "adam",
+            learning_rate_init  = 0.001,
+            alpha               = 0.0001,       # L2 regularisation
+            max_iter            = 500,
+            early_stopping      = True,
+            validation_fraction = 0.1,          # 10% of train used for early stop
+            n_iter_no_change    = 20,            # stop if no improvement for 20 iter
+            random_state        = 42,
+            verbose             = False,
+        ),
     )
 
-    # Fit scaler on training data only, then apply to both sets
-    scaler = StandardScaler()
-    X_train = scaler.fit_transform(X_train)
-    X_test  = scaler.transform(X_test)
 
-    print(f"[INFO] Train samples : {len(X_train)}")
-    print(f"[INFO] Test  samples : {len(X_test)}\n")
-    return X_train, X_test, y_train, y_test, scaler, le
+def train_model(pipeline, X_train, y_train_enc):
+    """Fit the pipeline on the full training set."""
+    t0 = time.time()
+    pipeline.fit(X_train, y_train_enc)
+    elapsed = time.time() - t0
+    mlp = pipeline.named_steps["mlpclassifier"]
+    print(f"Stopped at iteration {mlp.n_iter_}  |  "
+          f"final loss = {mlp.loss_:.6f}  |  time = {elapsed:.2f}s")
+    return pipeline, elapsed
 
 
-# ──────────────────────────────────────────────
-#  Build & Train Model
-# ──────────────────────────────────────────────
-
-def build_model() -> MLPClassifier:
+def evaluate_model(pipeline, X_test, y_test_enc, le, label_names):
     """
-    Construct an MLP neural network with two hidden layers.
-
-    Architecture
-    ────────────
-    Input → Dense(512, ReLU) → Dense(256, ReLU) → Softmax Output
-
-    Hyperparameter choices
-    ──────────────────────
-    • adam          : adaptive learning rate, works well on large feature sets
-    • alpha=1e-4    : L2 regularisation to reduce overfitting
-    • max_iter=500  : enough epochs for convergence on tabular features
-    • early_stopping: halt training when validation loss stops improving
+    Predict on the test set, decode integer predictions back to animal names,
+    and compute all metrics.
     """
-    model = MLPClassifier(
-        hidden_layer_sizes=(512, 256),
-        activation="relu",
-        solver="adam",
-        alpha=1e-4,              # L2 regularisation strength
-        batch_size="auto",
-        learning_rate="adaptive",
-        max_iter=500,
-        early_stopping=True,     # monitors a held-out validation set
-        validation_fraction=0.1,
-        n_iter_no_change=15,     # patience — stop if no improvement for 15 epochs
-        random_state=42,
-        verbose=False
+    t0          = time.time()
+    y_pred_enc  = pipeline.predict(X_test)
+    infer_t     = time.time() - t0
+
+    # Decode integers back to animal name strings
+    y_pred = le.inverse_transform(y_pred_enc)
+    y_test = le.inverse_transform(y_test_enc)
+
+    acc = accuracy_score(y_test, y_pred)
+    report_dict = classification_report(
+        y_test, y_pred,
+        labels=label_names, target_names=label_names,
+        output_dict=True, zero_division=0,
     )
-    return model
+    print(classification_report(
+        y_test, y_pred,
+        labels=label_names, target_names=label_names,
+        zero_division=0,
+    ))
+    print(f"Test accuracy : {acc:.4f}   Inference time: {infer_t:.4f}s")
+    cm = confusion_matrix(y_test, y_pred, labels=label_names)
+    return y_pred, y_test, acc, report_dict, cm, infer_t
 
 
-def train(model: MLPClassifier, X_train: np.ndarray, y_train: np.ndarray) -> MLPClassifier:
-    """Fit the neural network on the training set."""
-    print("[INFO] Training Neural Network — please wait ...")
-    model.fit(X_train, y_train)
-    print(f"[INFO] Training complete. Iterations run : {model.n_iter_}\n")
-    return model
-
-
-# ──────────────────────────────────────────────
-#  Evaluation
-# ──────────────────────────────────────────────
-
-def evaluate(
-    model: MLPClassifier,
-    X_train: np.ndarray,
-    X_test: np.ndarray,
-    y_train: np.ndarray,
-    y_test: np.ndarray,
-    label_encoder: LabelEncoder
-) -> dict:
+def save_model(pipeline, le, y_test, y_pred, acc, report, cm,
+               label_names, train_t, infer_t):
     """
-    Evaluate the trained model and collect all metrics into a dictionary
-    that will be pickled and shared with Member 6 (analysis/compare.py).
+    Save the trained pipeline and all evaluation metrics to results/.
 
-    Metrics collected
-    ─────────────────
-    • train_accuracy        : accuracy on training split
-    • test_accuracy         : accuracy on held-out test split
-    • f1_macro              : macro-averaged F1 (treats all classes equally)
-    • cv_scores             : 5-fold cross-validation accuracy scores
-    • cv_mean / cv_std      : mean and standard deviation of CV scores
-    • classification_report : per-class precision, recall, F1
-    • confusion_matrix      : raw confusion matrix (ndarray)
-    • class_names           : decoded class labels for plotting
-    • predictions           : predicted labels on the test set
-    • true_labels           : ground-truth labels on the test set
+    IMPORTANT: The LabelEncoder is saved under 'label_encoder' so that
+    api/server.py can decode integer predictions back to real animal names.
+    Without this, the server would show "0", "1", "2" instead of "zebra" etc.
     """
-    y_pred = model.predict(X_test)
-
-    train_acc = accuracy_score(y_train, model.predict(X_train))
-    test_acc  = accuracy_score(y_test, y_pred)
-    f1        = f1_score(y_test, y_pred, average="macro")
-    cm        = confusion_matrix(y_test, y_pred)
-    report    = classification_report(
-                    y_test, y_pred,
-                    target_names=label_encoder.classes_,
-                    output_dict=True
-                )
-
-    # 5-fold cross-validation on the full dataset for a robust accuracy estimate
-    cv        = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-    cv_scores = cross_val_score(model, X_train, y_train, cv=cv, scoring="accuracy")
-
-    # ── Print summary ──────────────────────────────────
-    print("=" * 55)
-    print("  NEURAL NETWORK — EVALUATION RESULTS")
-    print("=" * 55)
-    print(f"  Train Accuracy      : {train_acc * 100:.2f}%")
-    print(f"  Test  Accuracy      : {test_acc  * 100:.2f}%")
-    print(f"  Macro F1-Score      : {f1        * 100:.2f}%")
-    print(f"  CV Accuracy (5-fold): {cv_scores.mean() * 100:.2f}% ± {cv_scores.std() * 100:.2f}%")
-    print("=" * 55)
-    print("\n[INFO] Per-class Classification Report:\n")
-    print(classification_report(y_test, y_pred, target_names=label_encoder.classes_))
-
-    results = {
-        "model_name"            : "Neural Network (MLP)",
-        "train_accuracy"        : train_acc,
-        "test_accuracy"         : test_acc,
-        "f1_macro"              : f1,
-        "cv_scores"             : cv_scores,
-        "cv_mean"               : cv_scores.mean(),
-        "cv_std"                : cv_scores.std(),
-        "classification_report" : report,
-        "confusion_matrix"      : cm,
-        "class_names"           : list(label_encoder.classes_),
-        "predictions"           : y_pred,
-        "true_labels"           : y_test,
+    mlp = pipeline.named_steps["mlpclassifier"]
+    RESULTS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "model_name"      : "Neural Network (MLP)",
+        "model"           : pipeline,       # full trained pipeline (Scaler+PCA+MLP)
+        "label_names"     : label_names,    # class names from data/ folders
+        "label_encoder"   : le,             # REQUIRED for decoding NN integer outputs
+        "architecture"    : ARCHITECTURE,
+        "n_iterations"    : mlp.n_iter_,
+        "loss_curve"      : mlp.loss_curve_,
+        "y_test"          : y_test,         # string labels for compare.py
+        "y_pred"          : y_pred,         # string labels for compare.py
+        "accuracy"        : acc,
+        "report"          : report,
+        "confusion_matrix": cm,
+        "train_time"      : train_t,
+        "infer_time"      : infer_t,
     }
-    return results
+    with open(RESULTS_PATH, "wb") as f:
+        pickle.dump(payload, f)
+    print(f"Saved → {RESULTS_PATH}")
 
 
-# ──────────────────────────────────────────────
-#  Save Results
-# ──────────────────────────────────────────────
+def main():
+    # 1. Load features
+    X_train, X_test, y_train, y_test = load_data()
+    label_names = sorted(set(y_train))  # dynamic — from data/ folder names
+    print(f"Train: {len(X_train)}  Test: {len(X_test)}  "
+          f"Classes ({len(label_names)}): {label_names}")
 
-def save_results(results: dict, path: str) -> None:
-    """Pickle the results dictionary so Member 6 can load it in compare.py."""
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "wb") as f:
-        pickle.dump(results, f)
-    print(f"\n[INFO] Results saved → {path}")
+    # 2. Encode string labels to integers (MLP requirement)
+    y_train_enc, y_test_enc, le = encode_labels(y_train, y_test)
 
+    # 3. Build and train
+    pipeline = build_model(len(label_names))
+    pipeline, train_t = train_model(pipeline, X_train, y_train_enc)
 
-# ──────────────────────────────────────────────
-#  Main Entry Point
-# ──────────────────────────────────────────────
+    # 4. Evaluate — decode back to animal names for the report
+    y_pred, y_test_str, acc, report, cm, infer_t = evaluate_model(
+        pipeline, X_test, y_test_enc, le, label_names
+    )
 
-def main() -> None:
-    print("\n╔══════════════════════════════════════════════════╗")
-    print("║   Mammals Classification — Neural Network (MLP)  ║")
-    print("╚══════════════════════════════════════════════════╝\n")
-
-    # 1. Load pre-extracted features (produced by Member 1)
-    X, y = load_features(FEATURES_PATH)
-
-    # 2. Preprocess: encode labels, scale, split
-    X_train, X_test, y_train, y_test, scaler, le = preprocess(X, y)
-
-    # 3. Build and train the model
-    model = build_model()
-    model = train(model, X_train, y_train)
-
-    # 4. Evaluate and collect metrics
-    results = evaluate(model, X_train, X_test, y_train, y_test, le)
-
-    # 5. Save results for comparative analysis (Member 6)
-    save_results(results, RESULTS_PATH)
+    # 5. Save — include LabelEncoder so server.py can decode predictions
+    save_model(pipeline, le, y_test_str, y_pred, acc, report, cm,
+               label_names, train_t, infer_t)
+    print("Neural network training complete.")
 
 
 if __name__ == "__main__":
