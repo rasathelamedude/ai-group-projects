@@ -74,9 +74,22 @@ def save_vector_features(features, labels):
         features, labels, test_size=0.2, random_state=42
     )
 
+    """
+    one feature might be 0 → 1000 
+    another might be 0 → 100 
+    """
+
     scalar = StandardScaler()
     X_train_scaled = scalar.fit_transform(X_train)
-    X_test_scaled = scalar.fit_transform(X_test)
+    X_test_scaled = scalar.transform(X_test)
+    
+    # -2 - +2
+    
+
+    """
+    Training phase → “learn the rules of the world”
+    Test phase → “apply those rules blindly”
+    """
 
     with open(VECTORIZED_FEATURES_PATH, "wb") as f:
         pickle.dump(
