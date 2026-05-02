@@ -37,7 +37,7 @@ FEATURES_DIR = BASE_DIR / "features"
 if str(FEATURES_DIR) not in sys.path:
     sys.path.insert(0, str(FEATURES_DIR))
 
-from feature_utils import extract_features_from_image  # shared extraction function
+from features.extractor import extract_features  # shared extraction function
 
 RESULTS_DIR = BASE_DIR / "results"
 WEB_DIST    = BASE_DIR / "web" / "dist"
@@ -252,7 +252,7 @@ async def predict(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="Cannot read image file.")
 
     # Step 2: extract raw features — same RGB hist + HOG as extractor.py
-    feat_raw = extract_features_from_image(img_arr)   # shape (~1860,), unscaled
+    feat_raw = extract_features(img_arr)   # shape (~1860,), unscaled
 
     # Step 3: apply the same StandardScaler that was fit on training data
     scaler     = _load_scaler()
